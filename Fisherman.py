@@ -30,6 +30,18 @@ screen_area = int(cordies[0]),int(cordies[1]),int(cordies[2]),int(cordies[3])
 #Coords for fishing spots
 coords = []
 
+#extras, set window position
+try:
+    main_window_pos = parser.get('Settings','main_window_pos')
+    main_window_pos = main_window_pos.strip('(')
+    main_window_pos = main_window_pos.strip(')')
+    main_window_pos = main_window_pos.split(',')
+    main_window_pos_x = int(main_window_pos[0])
+    main_window_pos_y = int(main_window_pos[1])
+    set_main_window_pos(main_window_pos_x, main_window_pos_y)
+except Exception as e:
+    print(f"Error key: {e}")
+
 #Sound Volume
 total = 0
 
@@ -303,14 +315,14 @@ def save_settings(sender,data):
     log_info(f'Saved New Settings to settings.ini', logger = "Information")
 
 #Settings for DearPyGui window
-set_main_window_size(700,500)
+set_main_window_size(800, 640)
 set_style_window_menu_button_position(0)
 set_theme("Gold")
 set_global_font_scale(1)
 set_main_window_resizable(False)
 
 #Creates the DearPyGui Window
-with window("Fisherman Window", width = 684, height = 460):
+with window("Fisherman Window", width = 784, height = 600):
     set_window_pos("Fisherman Window", 0, 0)
     add_input_int("Amount Of Spots", max_value = 10, min_value = 0, default_value = 1, tip = "Amount of Fishing Spots")
     add_input_int("Set Volume Threshold", max_value = 100000, min_value = 0, default_value = int(max_volume), callback = save_volume, tip = "Volume Threshold to trigger catch event")
@@ -327,7 +339,10 @@ with window("Fisherman Window", width = 684, height = 460):
     add_button("Save Settings", callback = save_settings, tip = "Saves bot settings to settings.ini")
     add_spacing(count = 5)
     add_logger("Information", log_level = 0)
-    log_info(f'Loaded Settings. Volume Threshold: {max_volume}, Tracking Zone: {screen_area}, Debug Mode: {debugmode}', logger = "Information")
+    log_info(f"Loaded Settings.", logger = "Information")
+    log_info(f"Volume Threshold: {max_volume}", logger = "Information")
+    log_info(f"Tracking Zone: {screen_area}", logger = "Information")
+    log_info(f"Debug Mode: {debugmode}", logger = "Information")
 
 threading.Thread(target = Setup_title).start()
 start_dearpygui()

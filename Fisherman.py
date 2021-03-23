@@ -20,6 +20,7 @@ debugmode = parser.getboolean('Settings','debug')
 max_volume = parser.getint('Settings','Volume_Threshold')
 screen_area = parser.get('Settings','tracking_zone')
 detection_threshold = parser.getfloat('Settings','detection_threshold')
+cast_timeout = parser.getint('Settings','cast_timeout')
 
 screen_area = screen_area.strip('(')
 screen_area = screen_area.strip(')')
@@ -109,22 +110,22 @@ def cast_hook():
             last_state = STATE
         if stop_button == False:
             if STATE == CASTING or STATE == STARTED:
-                time.sleep(2)
+                time.sleep(1.5)
                 pyautogui.mouseUp()
                 x,y = get_new_spot()
                 pyautogui.moveTo(x,y,tween=pyautogui.linear,duration=0.2)
                 time.sleep(0.2)
                 pyautogui.mouseDown()
-                time.sleep(random.uniform(0.5,1))
+                time.sleep(random.uniform(0.4,0.7))
                 pyautogui.mouseUp()
                 log_info(f"Casted towards:{x,y}", logger = "Information")
-                time.sleep(2.5)
+                time.sleep(1.5)
                 STATE = CASTED
                 cast_time = time.time()
             elif STATE == CASTED:
                 duration = time.time() - cast_time
-                if duration > 120:
-                    log_info(f"Waiting too long for 120 secs. Recasting", logger = "Information")
+                if duration > cast_timeout:
+                    log_info(f"Waiting for too long: {cast_timeout} secs. Recasting", logger = "Information")
                     STATE = CASTING
                     pyautogui.mouseDown()
                     time.sleep(0.1)
@@ -144,7 +145,7 @@ def do_catch():
         pyautogui.mouseDown()
         pyautogui.mouseUp()
         #Initial scan. Waits for bobber to appear
-        time.sleep(0.5)
+        time.sleep(0.2)
         valid,location,size = Detect_Bobber()
         if valid == "TRUE":
             log_info(f"Bobber detected! Starting to catch fish", logger = "Information")
@@ -159,7 +160,7 @@ def do_catch():
             while 1:
                 valid,location,size = Detect_Bobber()
                 if valid == "TRUE":
-                    if location[0] < size / 2:
+                    if location[0] < size * 0.7: #Solving minigame is faster if we stick to the right side
                         pyautogui.mouseDown()
                     else:
                         pyautogui.mouseUp()
@@ -167,10 +168,9 @@ def do_catch():
                     if STATE != CASTING:
                         log_info(f"Fish catched! Fishing time: {round(duration, 2)} secs", logger = "Information")
                         fished_count += 1
-                        STATE = CASTING
-                        pyautogui.mouseDown()
-                        time.sleep(0.1)
                         pyautogui.mouseUp()
+                        time.sleep(5) #Waiting for the late notification
+                        STATE = CASTING
                         break
         else:
             log_info(f"Bobber not found!", logger = "Information")
@@ -241,12 +241,14 @@ def Detect_Bobber():
         result = cv2.matchTemplate(base,bobber,cv2.TM_CCOEFF_NORMED)
         min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
         if max_val > 0.5:
-            print(f"Bobber Found!. Match certainty:{max_val}")
-            print("%s seconds to calculate" % (time.time() - start_time))
+            if debugmode:
+                print(f"Bobber Found!. Match certainty:{max_val}")
+                print("%s seconds to calculate" % (time.time() - start_time))
             return ["TRUE",max_loc,base.shape[1]]
         else:
-            print(f"Bobber not found. Match certainty:{max_val}")
-            print("%s seconds to calculate" % (time.time() - start_time))
+            if debugmode:
+                print(f"Bobber not found. Match certainty:{max_val}")
+                print("%s seconds to calculate" % (time.time() - start_time))
             return ["FALSE",max_loc,base.shape[1]]
 
 #Starts the bots threads
@@ -285,13 +287,19 @@ def stop(data,sender):
 def save_volume(sender, data):
     global max_volume
     max_volume = get_value("Set Volume Threshold")
-    log_info(f'Max Volume Updated to :{max_volume}', logger = "Information")
+    log_info(f'Max Volume Updated to: {max_volume}', logger = "Information")
 
 #Set detection threshold
 def save_threshold(sender,data):
     global detection_threshold
     detection_threshold = get_value("Set Detection Threshold")
-    log_info(f'Detection Threshold Updated to :{detection_threshold}', logger = "Information")
+    log_info(f'Detection Threshold Updated to: {detection_threshold}', logger = "Information")
+
+#Set detection threshold
+def save_cast_timeout(sender,data):
+    global cast_timeout
+    cast_timeout = get_value("Set Casting Timeout")
+    log_info(f'Casting Timeout Updated to: {cast_timeout}', logger = "Information")
 
 #Title Tracking
 def Setup_title():
@@ -327,6 +335,7 @@ with window("Fisherman Window", width = 784, height = 600):
     add_input_int("Amount Of Spots", max_value = 10, min_value = 0, default_value = 1, tip = "Amount of Fishing Spots")
     add_input_int("Set Volume Threshold", max_value = 100000, min_value = 0, default_value = int(max_volume), callback = save_volume, tip = "Volume Threshold to trigger catch event")
     add_input_float("Set Detection Threshold", min_value = 0.1, max_value = 1.0, default_value = detection_threshold, callback = save_threshold)
+    add_input_int("Set Casting Timeout", min_value = 20, max_value = 300, default_value = cast_timeout, callback = save_cast_timeout)
     add_spacing(count = 3)
     add_button("Set Fishing Spots", width = 130, callback = generate_coords, tip = "Starts function that lets you select fishing spots")
     add_same_line()

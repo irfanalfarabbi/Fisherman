@@ -12,6 +12,7 @@ STOPPED = "STOPPED" #Bot is stopped and waiting
 CASTING = "CASTING" #Casting out line to spot
 CASTED = "CASTED" #Line is casted and waiting for fish
 CATCHING = "CATCHING" #Bot is catching fish
+CATCH_LIMIT = 600 #Suggested limit before fishing pole break
 
 #Loads Settings
 parser = configparser.ConfigParser()
@@ -41,7 +42,7 @@ try:
     main_window_pos_y = int(main_window_pos[1])
     set_main_window_pos(main_window_pos_x, main_window_pos_y)
 except Exception as e:
-    print(f"Error key: {e}")
+    print(f"Error: {e}")
 
 #Sound Volume
 total = 0
@@ -56,16 +57,19 @@ stop_button = False
 state_left = win32api.GetKeyState(0x01)
 state_right = win32api.GetKeyState(0x02)
 
-#fish counters
-sound_count = 0
+#fishing counters
+casted_count = 0
+heard_count = 0
 hooked_count = 0
-fished_count = 0
+catched_count = 0
 
 total_duration = 0
 average_duration = 0
 min_duration = 0
 max_duration = 0
 cast_time = 0
+cast_power_min = 50
+cast_power_max = 50
 
 bait_counter = 0
 
@@ -91,7 +95,7 @@ def check_volume():
                 if True:
                     reading=audioop.max(data, 2)
                     total=total+reading
-                    if total > max_volume and STATE != CATCHING and STATE != "DELAY" and STATE != CASTING:
+                    if total > max_volume and STATE != CATCHING and STATE != CASTING:
                         do_catch()
         else:
             break
@@ -101,7 +105,7 @@ def get_new_spot():
 
 #Runs the casting function
 def cast_hook():
-    global STATE,cast_time
+    global STATE,cast_time,casted_count
     last_state = ""
     while 1:
         time.sleep(0.5)
@@ -112,13 +116,14 @@ def cast_hook():
             if STATE == CASTING or STATE == STARTED:
                 time.sleep(1.5)
                 pyautogui.mouseUp()
-                x,y = get_new_spot()
+                x, y = get_new_spot()
                 pyautogui.moveTo(x,y,tween=pyautogui.linear,duration=0.2)
                 time.sleep(0.2)
                 pyautogui.mouseDown()
-                time.sleep(random.uniform(0.4,0.7))
+                time.sleep(random.uniform(cast_power_min*9/1000, cast_power_max*9/1000))
                 pyautogui.mouseUp()
-                log_info(f"Casted towards:{x,y}", logger = "Information")
+                log_info(f"Casted towards: {x,y}", logger = "Information")
+                casted_count += 1
                 time.sleep(1.5)
                 STATE = CASTED
                 cast_time = time.time()
@@ -136,16 +141,16 @@ def cast_hook():
 
 #Uses obj detection with OpenCV to find and track bobbers left / right coords
 def do_catch():
-    global STATE,sound_count,hooked_count,fished_count,bait_counter,cast_time,total_duration,average_duration,min_duration,max_duration
+    global STATE,heard_count,hooked_count,catched_count,bait_counter,cast_time,total_duration,average_duration,min_duration,max_duration
     if STATE != CASTING and STATE != STARTED:
-        sound_count += 1
-        STATE = CATCHING
-        duration = time.time() - cast_time
         log_info(f"Hooked sound detected!", logger = "Information")
+        heard_count += 1
+        STATE = CATCHING
         pyautogui.mouseDown()
         pyautogui.mouseUp()
+        duration = time.time() - cast_time
         #Initial scan. Waits for bobber to appear
-        time.sleep(0.2)
+        time.sleep(0.5)
         valid,location,size = Detect_Bobber()
         if valid == "TRUE":
             log_info(f"Bobber detected! Starting to catch fish", logger = "Information")
@@ -167,13 +172,18 @@ def do_catch():
                 else:
                     if STATE != CASTING:
                         log_info(f"Fish catched! Fishing time: {round(duration, 2)} secs", logger = "Information")
-                        fished_count += 1
+                        catched_count += 1
+                        if catched_count >= CATCH_LIMIT:
+                            log_info(f"Catch limit reached! Limit: {CATCH_LIMIT}", logger = "Information")
+                            log_info(f"Please consider to repair your fishing pole!", logger = "Information")
+                            stop(0,0)
                         pyautogui.mouseUp()
                         time.sleep(5) #Waiting for the late notification
                         STATE = CASTING
                         break
         else:
             log_info(f"Bobber not found!", logger = "Information")
+            time.sleep(2)
             STATE = CASTING
 
 ##########################################################
@@ -189,7 +199,7 @@ def generate_coords(sender,data):
     for n in range(int(amount_of_choords)):
         n = n+1
         temp = []
-        log_info(f'[spot:{n}]|Press Spacebar over the spot you want', logger = "Information")
+        log_info(f'[spot:{n}] | Press Spacebar over the spot you want', logger = "Information")
         time.sleep(1)
         while True:
             a = win32api.GetKeyState(0x20)
@@ -202,7 +212,7 @@ def generate_coords(sender,data):
         temp.append(x)
         temp.append(y)
         coords.append(temp)
-        log_info(f'Position:{n} Saved. | {x,y}', logger = "Information")
+        log_info(f'Position: {n} Saved. | {x, y}', logger = "Information")
 
 #Sets tracking zone for image detection
 def Grab_Screen(sender,data):
@@ -295,17 +305,32 @@ def save_threshold(sender,data):
     detection_threshold = get_value("Set Detection Threshold")
     log_info(f'Detection Threshold Updated to: {detection_threshold}', logger = "Information")
 
-#Set detection threshold
+#Set cast timeout
 def save_cast_timeout(sender,data):
     global cast_timeout
     cast_timeout = get_value("Set Casting Timeout")
     log_info(f'Casting Timeout Updated to: {cast_timeout}', logger = "Information")
 
+#Set cast power
+def save_cast_power(sender,data):
+    global cast_power_min, cast_power_max
+    cp_min = get_value(sender)[0]
+    cp_max = get_value(sender)[1]
+    if cp_min > cp_max:
+        if cast_power_min != cp_min:
+            cp_min = cp_max
+        else:
+            cp_max = cp_min
+        set_value(sender, [cp_min, cp_max])
+    cast_power_min = cp_min
+    cast_power_max = cp_max
+    # log_info(f'Casting Power Updated to: {cast_power_min} - {cast_power_max}', logger = "Information")
+
 #Title Tracking
 def Setup_title():
     global bait_counter
     while 1:
-        set_main_window_title(f"Fisherman | Status: {STATE} | Fish Hits: {fished_count} / {hooked_count} ({sound_count}) | Current Volume: {max_volume} / {total} | Duration: {average_duration} / {min_duration} - {max_duration}")
+        set_main_window_title(f"Fisherman | Status: {STATE} | Fish Hits: {catched_count} / {hooked_count} / {heard_count} / {casted_count} | Duration: {min_duration} - {max_duration} ({average_duration}) | Volume:{total} / {max_volume}")
         time.sleep(0.1)
         if bait_counter == 10:
             bait_counter = 0
@@ -330,22 +355,23 @@ set_global_font_scale(1)
 set_main_window_resizable(False)
 
 #Creates the DearPyGui Window
-with window("Fisherman Window", width = 784, height = 600):
-    set_window_pos("Fisherman Window", 0, 0)
+with window("Fisherman", width = 784, height = 600):
+    set_window_pos("Fisherman", 0, 0)
     add_input_int("Amount Of Spots", max_value = 10, min_value = 0, default_value = 1, tip = "Amount of Fishing Spots")
+    add_slider_int2("Set Casting Power", min_value = 20, max_value = 100, default_value = (cast_power_min, cast_power_max), callback = save_cast_power, tip = "Casting power minimum and maximum in percentage")
+    add_input_int("Set Casting Timeout", min_value = 20, max_value = 300, default_value = cast_timeout, callback = save_cast_timeout)
     add_input_int("Set Volume Threshold", max_value = 100000, min_value = 0, default_value = int(max_volume), callback = save_volume, tip = "Volume Threshold to trigger catch event")
     add_input_float("Set Detection Threshold", min_value = 0.1, max_value = 1.0, default_value = detection_threshold, callback = save_threshold)
-    add_input_int("Set Casting Timeout", min_value = 20, max_value = 300, default_value = cast_timeout, callback = save_cast_timeout)
     add_spacing(count = 3)
     add_button("Set Fishing Spots", width = 130, callback = generate_coords, tip = "Starts function that lets you select fishing spots")
     add_same_line()
     add_button("Set Tracking Zone", callback = Grab_Screen, tip = "Sets zone bot tracks for solving fishing minigame")
+    add_same_line()
+    add_button("Save Settings", callback = save_settings, tip = "Saves bot settings to settings.ini")
     add_spacing(count = 5)
     add_button("Start Bot", callback = start, tip = "Starts the bot")
     add_same_line()
     add_button("Stop Bot", callback = stop, tip = "Stops the bot")
-    add_same_line()
-    add_button("Save Settings", callback = save_settings, tip = "Saves bot settings to settings.ini")
     add_spacing(count = 5)
     add_logger("Information", log_level = 0)
     log_info(f"Loaded Settings.", logger = "Information")

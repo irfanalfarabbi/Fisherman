@@ -44,6 +44,23 @@ try:
 except Exception as e:
     print(f"Error: {e}")
 
+#select input device
+p = pyaudio.PyAudio()
+default_device = p.get_default_input_device_info()
+input_device_index = default_device.get("index")
+input_device_name = default_device.get("name")
+
+try:
+    device_count = p.get_host_api_info_by_index(0).get('deviceCount')
+    for i in range(0, device_count):
+        device = p.get_device_info_by_host_api_device_index(0, i)
+        if (device.get("maxInputChannels")) > 0 and device.get("name").find("CABLE Output") == 0:
+            input_device_index = device.get("index")
+            input_device_name = device.get("name")
+            break
+except Exception as e:
+    print(f"Error: {e}")
+
 #Sound Volume
 total = 0
 
@@ -84,8 +101,7 @@ food_timer = 0
 #Scans the current input volume
 def check_volume():
     global total,max_volume,stop_button
-    p = pyaudio.PyAudio()
-    stream = p.open(format=pyaudio.paInt16,channels=2,rate=44100,input=True,frames_per_buffer=1024)
+    stream = p.open(format=pyaudio.paInt16,channels=2,rate=44100,input=True,input_device_index=input_device_index,frames_per_buffer=1024)
     current_section = 0
     while 1:
         if stop_button == False:
@@ -250,7 +266,7 @@ def Detect_Bobber():
         bobber = cv2.cvtColor(bobber, cv2.COLOR_RGB2BGR)
         result = cv2.matchTemplate(base,bobber,cv2.TM_CCOEFF_NORMED)
         min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
-        if max_val > 0.5:
+        if max_val > detection_threshold:
             if debugmode:
                 print(f"Bobber Found!. Match certainty:{max_val}")
                 print("%s seconds to calculate" % (time.time() - start_time))
@@ -330,7 +346,7 @@ def save_cast_power(sender,data):
 def Setup_title():
     global bait_counter
     while 1:
-        set_main_window_title(f"Fisherman | Status: {STATE} | Fish Hits: {catched_count} / {hooked_count} / {heard_count} / {casted_count} | Duration: {min_duration} - {max_duration} ({average_duration}) | Volume:{total} / {max_volume}")
+        set_main_window_title(f"Fisherman | Status: {STATE} | Fish Hits: {catched_count} / {hooked_count} / {heard_count} / {casted_count} | Duration: {min_duration} - {max_duration} ({average_duration}) | Volume: {total} / {max_volume}")
         time.sleep(0.1)
         if bait_counter == 10:
             bait_counter = 0
@@ -378,6 +394,7 @@ with window("Fisherman", width = 784, height = 600):
     log_info(f"Volume Threshold: {max_volume}", logger = "Information")
     log_info(f"Tracking Zone: {screen_area}", logger = "Information")
     log_info(f"Debug Mode: {debugmode}", logger = "Information")
+    log_info(f"Detected Input Device: {input_device_name}", logger = "Information")
 
 threading.Thread(target = Setup_title).start()
 start_dearpygui()

@@ -30,7 +30,7 @@ screen_area = int(cordies[0]),int(cordies[1]),int(cordies[2]),int(cordies[3])
 
 #screen_area = x1,y1,x2,y2
 #Coords for fishing spots
-coords = []
+fishing_coordinates = []
 
 #extras, set window position
 try:
@@ -59,7 +59,7 @@ try:
             input_device_name = device.get("name")
             break
 except Exception as e:
-    print(f"Error: {e}")
+    print(f"Notice: {e}")
 
 #Sound Volume
 total = 0
@@ -68,7 +68,7 @@ total = 0
 STATE = IDLE
 
 #Thread Stopper
-stop_button = False
+stop_button = True
 
 #Stuff for mouse events
 state_left = win32api.GetKeyState(0x01)
@@ -100,7 +100,7 @@ food_timer = 0
 
 #Scans the current input volume
 def check_volume():
-    global total,max_volume,stop_button
+    global total,max_volume
     stream = p.open(format=pyaudio.paInt16,channels=2,rate=44100,input=True,input_device_index=input_device_index,frames_per_buffer=1024)
     current_section = 0
     while 1:
@@ -117,7 +117,7 @@ def check_volume():
             break
 
 def get_new_spot():
-    return random.choice(coords)
+    return random.choice(fishing_coordinates)
 
 #Runs the casting function
 def cast_hook():
@@ -155,7 +155,7 @@ def cast_hook():
         else:
             break
 
-#Uses obj detection with OpenCV to find and track bobbers left / right coords
+#Uses obj detection with OpenCV to find and track bobbers left / right coordinates
 def do_catch():
     global STATE,heard_count,hooked_count,catched_count,bait_counter,cast_time,total_duration,average_duration,min_duration,max_duration
     if STATE != CASTING and STATE != STARTED:
@@ -166,10 +166,15 @@ def do_catch():
         pyautogui.mouseUp()
         duration = time.time() - cast_time
         #Initial scan. Waits for bobber to appear
-        time.sleep(0.5)
-        valid,location,size = Detect_Bobber()
-        if valid == "TRUE":
-            log_info(f"Bobber detected! Starting to catch fish", logger = "Information")
+        check = 0
+        valid = False
+        while check < 100:
+            check += 1
+            time.sleep(0.01)
+            valid, location, size = detect_bobber()
+            if valid: break
+        if valid:
+            log_info(f"Bobber detected after {round(check*0.1, 2)} secs. Starting to catch fish!", logger = "Information")
             hooked_count += 1
             bait_counter += 1
             total_duration += duration
@@ -179,8 +184,8 @@ def do_catch():
             if duration > max_duration:
                 max_duration = round(duration, 2)
             while 1:
-                valid,location,size = Detect_Bobber()
-                if valid == "TRUE":
+                valid, location, size = detect_bobber()
+                if valid:
                     if location[0] < size * 0.7: #Solving minigame is faster if we stick to the right side
                         pyautogui.mouseDown()
                     else:
@@ -208,12 +213,14 @@ def do_catch():
 #
 ##########################################################
 
-#Generates the areas used for casting
-def generate_coords(sender,data):
-    global coords,STATE,state_left
+#Sets the spots that will be used for casting
+def set_fishing_spots(sender,data):
+    global fishing_coordinates,state_left
+    stop(0, 0) #stop bot first
+    fishing_coordinates = []
     amount_of_choords = get_value("Amount Of Spots")
     for n in range(int(amount_of_choords)):
-        n = n+1
+        n += 1
         temp = []
         log_info(f'[spot:{n}] | Press Spacebar over the spot you want', logger = "Information")
         time.sleep(1)
@@ -227,14 +234,15 @@ def generate_coords(sender,data):
         x,y = pyautogui.position()
         temp.append(x)
         temp.append(y)
-        coords.append(temp)
+        fishing_coordinates.append(temp)
         log_info(f'Position: {n} Saved. | {x, y}', logger = "Information")
 
 #Sets tracking zone for image detection
-def Grab_Screen(sender,data):
+def set_tracking_zone(sender,data):
     global screen_area
+    stop(0, 0) #stop bot first
     state_left = win32api.GetKeyState(0x20)
-    image_coords = []
+    tracking_zone = []
     log_info(f'Please hold and drag space over tracking zone (top left to bottom right)', logger = "Information")
     while True:
         a = win32api.GetKeyState(0x20)
@@ -242,19 +250,19 @@ def Grab_Screen(sender,data):
             state_left = a
             if a < 0:
                 x,y = pyautogui.position()
-                image_coords.append([x,y])
+                tracking_zone.append([x,y])
             else:
                 x,y = pyautogui.position()
-                image_coords.append([x,y])
+                tracking_zone.append([x,y])
                 break
         time.sleep(0.001)
-    start_point = image_coords[0]
-    end_point = image_coords[1]
+    start_point = tracking_zone[0]
+    end_point = tracking_zone[1]
     screen_area = start_point[0],start_point[1],end_point[0],end_point[1]
     log_info(f'Updated tracking area to {screen_area}', logger = "Information")
 
 #Detects bobber in tracking zone using openCV
-def Detect_Bobber():
+def detect_bobber():
     start_time = time.time()
     with mss.mss() as sct:
         base = numpy.array(sct.grab(screen_area))
@@ -270,44 +278,48 @@ def Detect_Bobber():
             if debugmode:
                 print(f"Bobber Found!. Match certainty:{max_val}")
                 print("%s seconds to calculate" % (time.time() - start_time))
-            return ["TRUE",max_loc,base.shape[1]]
+            return [True, max_loc, base.shape[1]]
         else:
             if debugmode:
                 print(f"Bobber not found. Match certainty:{max_val}")
                 print("%s seconds to calculate" % (time.time() - start_time))
-            return ["FALSE",max_loc,base.shape[1]]
+            return [False, max_loc, base.shape[1]]
 
 #Starts the bots threads
 def start(data,sender):
     global max_volume,stop_button,STATE
-    STATE = STARTING
-    stop_button = False
-    volume_manager = threading.Thread(target = check_volume)
-    hook_manager = threading.Thread(target = cast_hook)
     if stop_button == False:
-        max_volume = get_value("Set Volume Threshold")
-        if len(coords) == 0:
-            log_info(f'Please Select Fishing Coords first', logger = "Information")
+        log_info(f'Bot started already ah!', logger = "Information")
+    else:
+        if len(fishing_coordinates) == 0:
+            log_info(f'Please set fishing coordinates first!', logger = "Information")
             return
-        else:
-            volume_manager.start()
-            log_info(f'Volume Scanner Started', logger = "Information")
-            hook_manager.start()
-            log_info(f'Hook Manager Started', logger = "Information")
-            log_info(f'Bot Started', logger = "Information")
-    STATE = STARTED
-    # pyautogui.press("1")
+        stop_button = False
+        STATE = STARTING
+        max_volume = get_value("Set Volume Threshold")
+        volume_manager = threading.Thread(name = "VolumeScanner", target = check_volume)
+        volume_manager.start()
+        log_info(f'Volume Scanner Started', logger = "Information")
+        hook_manager = threading.Thread(name = "HookManager", target = cast_hook)
+        hook_manager.start()
+        log_info(f'Hook Manager Started', logger = "Information")
+        log_info(f'Bot Started', logger = "Information")
+        STATE = STARTED
+    # pyautogui.press("1") #disable auto potion
 
 #Stops the bot and closes active threads
 def stop(data,sender):
     global stop_button,STATE
-    STATE = STOPPING
-    stop_button = True
-    log_info(f'Stopping Hook Manager', logger = "Information")
-    log_info(f'Stopping Volume Scanner', logger = "Information")
-    pyautogui.mouseUp()
-    STATE = STOPPED
-    log_info(f'Stopped Bot', logger = "Information")
+    if stop_button == True:
+        log_info(f'Bot stopped already ah!', logger = "Information")
+    else:
+        STATE = STOPPING
+        stop_button = True
+        log_info(f'Stopping Hook Manager', logger = "Information")
+        log_info(f'Stopping Volume Scanner', logger = "Information")
+        pyautogui.mouseUp()
+        STATE = STOPPED
+        log_info(f'Stopped Bot', logger = "Information")
 
 #Updates Bot Volume
 def save_volume(sender, data):
@@ -342,8 +354,8 @@ def save_cast_power(sender,data):
     cast_power_max = cp_max
     # log_info(f'Casting Power Updated to: {cast_power_min} - {cast_power_max}', logger = "Information")
 
-#Title Tracking
-def Setup_title():
+#Title rendering
+def title_render():
     global bait_counter
     while 1:
         set_main_window_title(f"Fisherman | Status: {STATE} | Fish Hits: {catched_count} / {hooked_count} / {heard_count} / {casted_count} | Duration: {min_duration} - {max_duration} ({average_duration}) | Volume: {total} / {max_volume}")
@@ -379,9 +391,9 @@ with window("Fisherman", width = 784, height = 600):
     add_input_int("Set Volume Threshold", max_value = 100000, min_value = 0, default_value = int(max_volume), callback = save_volume, tip = "Volume Threshold to trigger catch event")
     add_input_float("Set Detection Threshold", min_value = 0.1, max_value = 1.0, default_value = detection_threshold, callback = save_threshold)
     add_spacing(count = 3)
-    add_button("Set Fishing Spots", width = 130, callback = generate_coords, tip = "Starts function that lets you select fishing spots")
+    add_button("Set Fishing Spots", width = 130, callback = set_fishing_spots, tip = "Starts function that lets you select fishing spots")
     add_same_line()
-    add_button("Set Tracking Zone", callback = Grab_Screen, tip = "Sets zone bot tracks for solving fishing minigame")
+    add_button("Set Tracking Zone", callback = set_tracking_zone, tip = "Sets zone bot tracks for solving fishing minigame")
     add_same_line()
     add_button("Save Settings", callback = save_settings, tip = "Saves bot settings to settings.ini")
     add_spacing(count = 5)
@@ -396,5 +408,5 @@ with window("Fisherman", width = 784, height = 600):
     log_info(f"Debug Mode: {debugmode}", logger = "Information")
     log_info(f"Detected Input Device: {input_device_name}", logger = "Information")
 
-threading.Thread(target = Setup_title).start()
+threading.Thread(name = "TitleRenderer", target = title_render).start()
 start_dearpygui()
